@@ -1,6 +1,6 @@
 # An RxJS Component Store for React
 
-When I was an Angular developer, I enjoyed using [@ngrx/component-store]([NgRx - @ngrx/component-store](https://ngrx.io/guide/component-store)) for my component's state management. But when my work circumstances changed, and I became a React developer, I missed the power and declarative approach I got from using RxJS. So I thought I would make a library that provides the bare-minimum functionality of @ngrx/component-store as a React hook.
+When I was an Angular developer, I enjoyed using [@ngrx/component-store](https://ngrx.io/guide/component-store) for my component's state management. But when my work circumstances changed, and I became a React developer, I missed the power and declarative approach I got from using RxJS. So I thought I would make a library that provides the bare-minimum functionality of @ngrx/component-store as a React hook.
 
 I'm a big fan of RxJS, and I've always felt it was a perfect fit for React development. The react hook allows you to define a component store similar to how it is done using @ngrx/component-store, and not have to mess with subscribing and subscribing to the observables.
 
