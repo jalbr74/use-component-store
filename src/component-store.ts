@@ -1,8 +1,14 @@
-import { BehaviorSubject, combineLatest, isObservable, merge, Observable, of, Subject, Subscription, tap } from 'rxjs';
+import { BehaviorSubject, isObservable, Observable, Subject, Subscription, tap } from 'rxjs';
 import { Dispatch, SetStateAction, useEffect, useMemo, useState } from 'react';
 
 /**
  * Provides a React hook for working with the component's state and component store.
+ *
+ * <pre>
+ *     const [state, store] = useComponentStore<AppState, AppStore>(AppStore, () => {
+ *         store.init();
+ *     });
+ * </pre>
  */
 export function useComponentStore<StateType, StoreType extends ComponentStore<StateType>>(
     ComponentStoreConstructor: new (initialState?: StateType) => StoreType,
@@ -14,14 +20,19 @@ export function useComponentStore<StateType, StoreType extends ComponentStore<St
     store.reactSetState = setState;
 
     useEffect(() => {
-        const subscription = store.subscribe();
+        store.createSubscriptions();
 
         initializeFn?.();
 
-        return () => subscription.unsubscribe();
+        return () => store.removeSubscriptions();
     }, [store]);
 
     return [state, store];
+}
+
+interface ObservableHandler {
+    observable: Observable<unknown>;
+    subscription?: Subscription;
 }
 
 /**
@@ -31,7 +42,8 @@ export function useComponentStore<StateType, StoreType extends ComponentStore<St
  */
 export class ComponentStore<T> {
     private stateSubject: BehaviorSubject<T>;
-    private effects: Observable<unknown>[] = [];
+    private observableHandlers: ObservableHandler[] = [];
+    private isSubscribed = false;
 
     state$: Observable<T>;
     reactSetState?: Dispatch<SetStateAction<T>>;
@@ -98,11 +110,11 @@ export class ComponentStore<T> {
      */
     effect<ObservableType>(generator: (source$: Observable<ObservableType>) => Observable<unknown>) {
         const origin$ = new Subject<ObservableType>();
-        this.effects.push(generator(origin$));
+        this.addObservable(generator(origin$));
 
         return ((observableOrValue?: ObservableType | Observable<ObservableType>): void => {
             if (isObservable(observableOrValue)) {
-                this.effects.push(observableOrValue.pipe(
+                this.addObservable(observableOrValue.pipe(
                     tap((value: ObservableType) => {
                         origin$.next(value as ObservableType);
                     })
@@ -113,11 +125,42 @@ export class ComponentStore<T> {
         });
     }
 
+    addObservable(observable: Observable<unknown>): void {
+        const observableHandler: ObservableHandler = {
+            observable
+        };
+
+        if (this.isSubscribed) {
+            // console.log('Creating an out-of-band subscription for observable: %O', observableHandler.observable);
+            observableHandler.subscription = observable.subscribe();
+        }
+
+        this.observableHandlers.push(observableHandler);
+    }
+
     /**
      * Provides a way to activate the effects defined by this component store. This is handled automatically by
      * useComponentStore().
      */
-    subscribe(): Subscription {
-        return combineLatest(this.effects).subscribe();
+    createSubscriptions(): void {
+        this.observableHandlers.forEach((observableHandler, index) => {
+            // console.log('Subscribing observable: %O, at index: %O', observableHandler.observable, index);
+            observableHandler.subscription = observableHandler.observable.subscribe();
+        });
+
+        this.isSubscribed = true;
+    }
+
+    /**
+     * Provides a way to deactivate the effects defined by this component store. This is handled automatically by
+     * useComponentStore().
+     */
+    removeSubscriptions(): void {
+        this.observableHandlers.forEach((observableHandler, index) => {
+            // console.log('Unsubscribing from observable: %O, at index: %O', observableHandler.observable, index);
+            observableHandler.subscription?.unsubscribe();
+        });
+
+        this.isSubscribed = false;
     }
 }
