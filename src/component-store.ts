@@ -69,12 +69,17 @@ export class ComponentStore<T> {
      * }));
      */
     setState(stateUpdaterFn: ((prevState: T) => T)): void {
-        this.reactSetState?.((state: T) => {
-            const newState = stateUpdaterFn(state);
-            this.stateSubject.next(newState);
+        if (this.reactSetState) {
+            this.reactSetState((state: T) => {
+                const newState = stateUpdaterFn(state);
+                this.stateSubject.next(newState);
 
-            return newState;
-        });
+                return newState;
+            });
+        } else {
+            const newState = stateUpdaterFn(this.state);
+            this.stateSubject.next(newState);
+        }
     }
 
     /**
