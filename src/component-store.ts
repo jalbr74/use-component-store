@@ -83,6 +83,20 @@ export class ComponentStore<T> {
     }
 
     /**
+     * Provides an easy way to update the state when you don't need to use the values from the old state. For example:
+     *
+     * this.patchState({
+     *     myValue: 'Hello World'
+     * });
+     */
+    patchState(changes: Partial<T>) {
+        this.setState((state) => ({
+            ...state,
+            ...changes
+        }));
+    }
+
+    /**
      * Provides a way for subclasses to define RxJS effects, which automatically get subscribed and unsubscribed during
      * the lifecycle of the component store. You can define an effect as follows:
      *
