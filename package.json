@@ -1,13 +1,13 @@
 {
     "name": "use-component-store",
-    "version": "1.0.6",
+    "version": "1.0.7",
     "author": "James Albright <jalbr74@gmail.com>",
     "license": "MIT",
     "description": "Provides a bare minimum implementation of a component store for React using RxJS. It basically mimics what @ngrx/component-store does for Angular.",
     "keywords": ["react", "rxjs", "component store", "ngrx", "@ngrx/component-store"],
     "repository": {
         "type": "git",
-        "url": "https://github.com/jalbr74/use-component-store"
+        "url": "git+https://github.com/jalbr74/use-component-store.git"
     },
     "main": "dist/index.js",
     "types": "dist/index.d.ts",
@@ -19,12 +19,12 @@
         "build": "npx tsc"
     },
     "peerDependencies": {
-        "react": ">=17.0.0",
+        "react": ">=16.0.0",
         "rxjs": ">=7.0.0"
     },
     "devDependencies": {
-        "@types/react": "^17.0",
-        "@types/react-dom": "^17.0",
+        "@types/react": "^16.0",
+        "@types/react-dom": "^16.0",
         "rimraf": "^6.0.1",
         "typescript": "^5.5.4"
     }
