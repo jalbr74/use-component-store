@@ -35,49 +35,67 @@ export interface AppState {
         x: number;
         y: number;
     };
+
+    message: string;
 }
 
 export class AppStore extends ComponentStore<AppState> {
-    constructor() {
+    constructor(initialMessage: string) {
         super({
             mouseClickPosition: { x: 0, y: 0 },
-            mouseMovePosition: { x: 0, y: 0, }
+            mouseMovePosition: { x: 0, y: 0, },
+            message: initialMessage,
         });
     }
 
-    updateMouseClickPosition = this.effect<MouseEvent>(origin$ =>
-        origin$.pipe(
-            tap((event) => {
-                this.setState((state) => ({
-                    ...state,
-                    mouseClickPosition: {
-                        x: event.clientX,
-                        y: event.clientY,
-                    }
-                }));
-            })
-        )
+    init() {
+        // This demonstrates sending updates to the store one at a time:
+        window.addEventListener('mousedown', (event: MouseEvent) => this.updateMouseClickPosition(event));
+
+        // This demonstrates sending updates to the store using an observable:
+        this.updateMouseMovePosition(fromEvent<MouseEvent>(window, 'mousemove'));
+    }
+
+    updateMouseClickPosition = this.effect<MouseEvent>(
+        origin$ => origin$
+            .pipe(
+                tap((event) => {
+                    this.patchState({
+                        mouseClickPosition: {
+                            x: event.clientX,
+                            y: event.clientY,
+                        }
+                    });
+                })
+            )
     );
 
-    updateMouseMovePosition = this.effect<MouseEvent>(origin$ =>
-        origin$.pipe(
-            tap((event) => {
-                this.setState((state) => ({
-                    ...state,
-                    mouseMovePosition: {
-                        x: event.clientX,
-                        y: event.clientY,
-                    }
-                }));
-            })
-        )
+    updateMouseMovePosition = this.effect<MouseEvent>(
+        origin$ => origin$
+            .pipe(
+                tap((event) => {
+                    this.setState((state) => ({
+                        ...state,
+                        mouseMovePosition: {
+                            x: event.clientX,
+                            y: event.clientY,
+                        }
+                    }));
+                })
+            )
     );
+
+    changeMessage(message: string) {
+        this.patchState({
+            message
+        })
+    }
 }
 ```
 
 
 
-From your React component, you can call `useComponentStore` to get a handle to the current state and the store. You can also pass an initialization function, which will be called the first time the store is created. For example:
+From your React component, you can call `useComponentStore` to get a handle to the current state and the store. You can also pass an array of args, which will be passed to the component store when it is constructed. For example:
 
 
 
@@ -89,13 +107,7 @@ import { useComponentStore } from './utils/component-store.ts';
 import { AppState, AppStore } from './App.store.ts';
 
 export function App() {
-    const [state, store] = useComponentStore<AppState, AppStore>(AppStore, () => {
-        // This demonstrates sending updates to the store one at a time:
-        window.addEventListener('mousedown', (event: MouseEvent) => store.updateMouseClickPosition(event));
-
-        // This demonstrates sending updates to the store using an observable:
-        store.updateMouseMovePosition(fromEvent<MouseEvent>(window, 'mousemove'));
-    });
+    const [state, store] = useComponentStore(AppStore, ['Initial message']);
 
     return (
         <>
@@ -105,8 +117,13 @@ export function App() {
             <div>
                 Mouse click position: {state.mouseClickPosition.x}, {state.mouseClickPosition.y}
             </div>
+            <div>
+                Message: {state.message}
+            </div>
+            <div>
+                <button onClick={() => store.changeMessage('Hello World!')}>Set Message</button>
+            </div>
         </>
     )
 }
 ```
-

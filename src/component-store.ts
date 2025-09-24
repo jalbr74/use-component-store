@@ -1,28 +1,31 @@
 import { BehaviorSubject, isObservable, Observable, Subject, Subscription, tap } from 'rxjs';
 import { Dispatch, SetStateAction, useEffect, useMemo, useState } from 'react';
 
+// helper: pull the state type out of a ComponentStore<...>
+type StateOf<S extends ComponentStore<any>> = S extends ComponentStore<infer T> ? T : never;
+
 /**
  * Provides a React hook for working with the component's state and component store.
  *
  * <pre>
- *     const [state, store] = useComponentStore<AppState, AppStore>(AppStore, () => {
- *         store.init();
- *     });
+ *     const [state, store] = useComponentStore(AppStore, [constructorArgs]?);
  * </pre>
  */
-export function useComponentStore<StateType, StoreType extends ComponentStore<StateType>>(
-    ComponentStoreConstructor: new (initialState?: StateType) => StoreType,
-    initializeFn?: () => void
-): [StateType, StoreType] {
-    const store = useMemo<StoreType>(() => new ComponentStoreConstructor(), [ComponentStoreConstructor]);
-    const [state, setState] = useState<StateType>(store.state);
+export function useComponentStore<
+    TStore extends ComponentStore<any>,
+    Ctor extends new (...args: any[]) => TStore
+>(
+    ComponentStoreConstructor: Ctor,
+    ctorArgs?: ConstructorParameters<Ctor>
+): [StateOf<InstanceType<Ctor>>, InstanceType<Ctor>] {
+    const store = useMemo<InstanceType<Ctor>>(() => new ComponentStoreConstructor(...ctorArgs ?? []) as InstanceType<Ctor>, [ComponentStoreConstructor, ctorArgs]);
+    const [state, setState] = useState<StateOf<InstanceType<Ctor>>>(store.state);
 
     store.reactSetState = setState;
 
     useEffect(() => {
         store.createSubscriptions();
-
-        initializeFn?.();
+        store.init();
 
         return () => store.removeSubscriptions();
     }, [store]);
@@ -58,6 +61,9 @@ export class ComponentStore<T> {
     constructor(initialState: T) {
         this.stateSubject = new BehaviorSubject(initialState);
         this.state$ = this.stateSubject.asObservable();
+    }
+
+    init(): void {
     }
 
     /**
@@ -144,7 +150,7 @@ export class ComponentStore<T> {
         });
     }
 
-    addObservable(observable: Observable<unknown>): void {
+    private addObservable(observable: Observable<unknown>): void {
         const observableHandler: ObservableHandler = {
             observable
         };
