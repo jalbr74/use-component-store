@@ -1,6 +1,6 @@
 {
     "name": "use-component-store",
-    "version": "2.0.0",
+    "version": "2.0.1",
     "author": "James Albright <jalbr74@gmail.com>",
     "license": "MIT",
     "description": "Provides a bare minimum implementation of a component store for React using RxJS. It basically mimics what @ngrx/component-store does for Angular.",

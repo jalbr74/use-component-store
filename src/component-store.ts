@@ -13,19 +13,19 @@ type StateOf<S extends ComponentStore<any>> = S extends ComponentStore<infer T> 
  */
 export function useComponentStore<
     TStore extends ComponentStore<any>,
-    Ctor extends new (...args: any[]) => TStore
+    Ctor extends new () => TStore
 >(
     ComponentStoreConstructor: Ctor,
-    ctorArgs?: ConstructorParameters<Ctor>
+    initArgs?: Parameters<InstanceType<Ctor>['init']>
 ): [StateOf<InstanceType<Ctor>>, InstanceType<Ctor>] {
-    const store = useMemo<InstanceType<Ctor>>(() => new ComponentStoreConstructor(...ctorArgs ?? []) as InstanceType<Ctor>, [ComponentStoreConstructor, ctorArgs]);
+    const store = useMemo<InstanceType<Ctor>>(() => new ComponentStoreConstructor() as InstanceType<Ctor>, [ComponentStoreConstructor]);
     const [state, setState] = useState<StateOf<InstanceType<Ctor>>>(store.state);
 
     store.reactSetState = setState;
 
     useEffect(() => {
         store.createSubscriptions();
-        store.init();
+        store.init(...initArgs ?? []);
 
         return () => store.removeSubscriptions();
     }, [store]);
@@ -63,7 +63,7 @@ export class ComponentStore<T> {
         this.state$ = this.stateSubject.asObservable();
     }
 
-    init(): void {
+    init(...args: any[]): void {
     }
 
     /**
