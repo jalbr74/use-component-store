@@ -47,7 +47,11 @@ export function useComponentStore(
 
     useEffect(() => {
         store.setUpSubscriptions();
-        store.init();
+
+        if (!store.isInitialized) {
+            store.init();
+            store.isInitialized = true;
+        }
 
         return () => store.tearDownSubscriptions();
     }, [store]);
@@ -56,7 +60,6 @@ export function useComponentStore(
 }
 
 interface ObservableHandler {
-    index: number;
     observable: Observable<unknown>;
     subscription?: Subscription;
 }
@@ -67,14 +70,13 @@ interface ObservableHandler {
  * subclass of this class:
  */
 export class ComponentStore<T> {
-    private stateSubject: BehaviorSubject<T>;
+    private readonly stateSubject: BehaviorSubject<T>;
+    private readonly tearDownSignal$ = new Subject<void>();
+
     private isSubscribed = false;
-    private observableIndex = 0;
-    private readonly destroyed$ = new Subject<void>();
+    private observableHandlers: ObservableHandler[] = [];
 
-    private persistentObservableHandlers: ObservableHandler[] = [];
-    private transientObservableHandlers: ObservableHandler[] = [];
-
+    isInitialized = false;
     state$: Observable<T>;
     reactSetState?: Dispatch<SetStateAction<T>>;
 
@@ -162,38 +164,30 @@ export class ComponentStore<T> {
      */
     effect<ObservableType>(generator: (source$: Observable<ObservableType>) => Observable<unknown>) {
         const origin$ = new Subject<ObservableType>();
-        this.addObservable(generator(origin$), true);
+        this.addObservable(generator(origin$));
 
         return ((observableOrValue?: ObservableType | Observable<ObservableType>): void => {
             if (isObservable(observableOrValue)) {
                 this.addObservable(observableOrValue.pipe(
-                    tap((value: ObservableType) => {
-                        // console.log(`Emitting value to effect`);
-                        origin$.next(value as ObservableType);
-                    })
-                ), false);
+                    tap((value: ObservableType) => origin$.next(value as ObservableType))
+                ));
             } else {
                 origin$.next(observableOrValue as ObservableType);
             }
         });
     }
 
-    private addObservable(observable: Observable<unknown>, isPersistent: boolean): void {
+    private addObservable(observable: Observable<unknown>): void {
         // Create an observable handler, which will hold the subscription when created
         const observableHandler: ObservableHandler = {
-            index: this.observableIndex++,
             observable
         };
 
-        // console.log(`Adding observable with ID: ${observableHandler.index}, isPersistent: ${isPersistent}`);
-
         if (this.isSubscribed) {
-            // console.log(`Doing an out-of-band subscription for observable with ID: ${observableHandler.index}`);
             observableHandler.subscription = observable.subscribe();
         }
 
-        if (isPersistent) this.persistentObservableHandlers.push(observableHandler);
-        else this.transientObservableHandlers.push(observableHandler);
+        this.observableHandlers.push(observableHandler);
     }
 
     /**
@@ -203,15 +197,9 @@ export class ComponentStore<T> {
     setUpSubscriptions(): void {
         if (this.isSubscribed) return;
 
-        this.persistentObservableHandlers.forEach((observableHandler) => {
-            // console.log(`Subscribing persistent observable with ID: ${observableHandler.index}`);
-            observableHandler.subscription = observableHandler.observable.subscribe();
-        });
-
-        this.transientObservableHandlers.forEach((observableHandler) => {
-            // console.log(`Subscribing transient observable with ID: ${observableHandler.index}`);
+        this.observableHandlers.forEach((observableHandler) => {
             observableHandler.subscription = observableHandler.observable
-                .pipe(takeUntil(this.destroyed$))
+                .pipe(takeUntil(this.tearDownSignal$))
                 .subscribe();
         });
 
@@ -225,23 +213,13 @@ export class ComponentStore<T> {
     tearDownSubscriptions(): void {
         if (!this.isSubscribed) return;
 
-        // Signal all transient to complete
-        this.destroyed$.next();
+        // Make sure all existing subscriptions are completed
+        this.tearDownSignal$.next();
 
-        this.persistentObservableHandlers.forEach((observableHandler) => {
-            // console.log(`Unsubscribing persistent observable with ID: ${observableHandler.index}`);
+        this.observableHandlers.forEach((observableHandler) => {
             observableHandler.subscription?.unsubscribe();
             observableHandler.subscription = undefined;
         });
-
-        this.transientObservableHandlers.forEach((observableHandler) => {
-            // console.log(`Unsubscribing transient observable with ID: ${observableHandler.index}`);
-            observableHandler.subscription?.unsubscribe();
-            observableHandler.subscription = undefined;
-        });
-
-        // Note: Transient observables get recreated automatically when the component is remounted.
-        this.transientObservableHandlers = [];
 
         this.isSubscribed = false;
     }
