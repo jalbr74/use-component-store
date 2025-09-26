@@ -1,31 +1,53 @@
 import { BehaviorSubject, isObservable, Observable, Subject, Subscription, tap } from 'rxjs';
-import { Dispatch, SetStateAction, useEffect, useMemo, useState } from 'react';
+import { Dispatch, SetStateAction, useEffect, useState } from 'react';
 
-// helper: pull the state type out of a ComponentStore<...>
-type StateOf<S extends ComponentStore<any>> = S extends ComponentStore<infer T> ? T : never;
+type AnyStore = ComponentStore<any>;
+type StateOf<S extends AnyStore> = S extends ComponentStore<infer T> ? T : never;
+type NoArgStoreCtor<S extends AnyStore = AnyStore> = new () => S;
+
+function isNoArgCtor(x: unknown): x is NoArgStoreCtor {
+    return (
+        typeof x === "function" &&
+        !!(x as any).prototype &&
+        ("createSubscriptions" in (x as any).prototype || "removeSubscriptions" in (x as any).prototype)
+    );
+}
 
 /**
  * Provides a React hook for working with the component's state and component store.
  *
  * <pre>
- *     const [state, store] = useComponentStore(AppStore, [constructorArgs]?);
+ *     const [state, store] = useComponentStore(AppStore);
  * </pre>
  */
-export function useComponentStore<
-    TStore extends ComponentStore<any>,
-    Ctor extends new () => TStore
->(
-    ComponentStoreConstructor: Ctor,
-    initArgs?: Parameters<InstanceType<Ctor>['init']>
-): [StateOf<InstanceType<Ctor>>, InstanceType<Ctor>] {
-    const store = useMemo<InstanceType<Ctor>>(() => new ComponentStoreConstructor() as InstanceType<Ctor>, [ComponentStoreConstructor]);
-    const [state, setState] = useState<StateOf<InstanceType<Ctor>>>(store.state);
+export function useComponentStore<Ctor extends NoArgStoreCtor>(
+    StoreCtor: Ctor
+): [StateOf<InstanceType<Ctor>>, InstanceType<Ctor>];
+
+/**
+ * Similar to useComponentStore, but instead of passing in a constructor, you pass in a factory function that creates
+ * the store. This is useful when your store's constructor requires parameters.
+ *
+ * <pre>
+ *     const [state, store] = useComponentStore(() => new AppStore('Initial Message'));
+ * </pre>
+ */
+export function useComponentStore<S extends AnyStore>(
+    factory: () => S
+): [StateOf<S>, S];
+
+/* ——— single implementation ——— */
+export function useComponentStore(
+    arg: NoArgStoreCtor | (() => AnyStore)
+) {
+    const [store] = useState<AnyStore>(() => isNoArgCtor(arg) ? new arg() : (arg as () => AnyStore)());
+    const [state, setState] = useState(() => store.state);
 
     store.reactSetState = setState;
 
     useEffect(() => {
         store.createSubscriptions();
-        store.init(...initArgs ?? []);
+        store.init();
 
         return () => store.removeSubscriptions();
     }, [store]);
@@ -63,7 +85,7 @@ export class ComponentStore<T> {
         this.state$ = this.stateSubject.asObservable();
     }
 
-    init(...args: any[]): void {
+    init(): void {
     }
 
     /**
