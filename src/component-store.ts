@@ -1,4 +1,4 @@
-import { BehaviorSubject, isObservable, Observable, Subject, Subscription, tap } from 'rxjs';
+import { BehaviorSubject, isObservable, Observable, Subject, Subscription, takeUntil, tap } from 'rxjs';
 import { Dispatch, SetStateAction, useEffect, useState } from 'react';
 
 type AnyStore = ComponentStore<any>;
@@ -70,9 +70,10 @@ export class ComponentStore<T> {
     private stateSubject: BehaviorSubject<T>;
     private isSubscribed = false;
     private observableIndex = 0;
+    private readonly destroyed$ = new Subject<void>();
 
-    private primaryObservableHandlers: ObservableHandler[] = [];
-    private secondaryObservableHandlers: ObservableHandler[] = [];
+    private persistentObservableHandlers: ObservableHandler[] = [];
+    private transientObservableHandlers: ObservableHandler[] = [];
 
     state$: Observable<T>;
     reactSetState?: Dispatch<SetStateAction<T>>;
@@ -177,22 +178,22 @@ export class ComponentStore<T> {
         });
     }
 
-    private addObservable(observable: Observable<unknown>, isPrimary: boolean): void {
+    private addObservable(observable: Observable<unknown>, isPersistent: boolean): void {
         // Create an observable handler, which will hold the subscription when created
         const observableHandler: ObservableHandler = {
             index: this.observableIndex++,
             observable
         };
 
-        // console.log(`Adding observable with ID: ${observableHandler.index}, isPrimary: ${isPrimary}`);
+        // console.log(`Adding observable with ID: ${observableHandler.index}, isPersistent: ${isPersistent}`);
 
         if (this.isSubscribed) {
             // console.log(`Doing an out-of-band subscription for observable with ID: ${observableHandler.index}`);
             observableHandler.subscription = observable.subscribe();
         }
 
-        if (isPrimary) this.primaryObservableHandlers.push(observableHandler);
-        else this.secondaryObservableHandlers.push(observableHandler);
+        if (isPersistent) this.persistentObservableHandlers.push(observableHandler);
+        else this.transientObservableHandlers.push(observableHandler);
     }
 
     /**
@@ -200,14 +201,18 @@ export class ComponentStore<T> {
      * useComponentStore().
      */
     setUpSubscriptions(): void {
-        this.primaryObservableHandlers.forEach((observableHandler) => {
-            // console.log(`Subscribing primary observable with ID: ${observableHandler.index}`);
+        if (this.isSubscribed) return;
+
+        this.persistentObservableHandlers.forEach((observableHandler) => {
+            // console.log(`Subscribing persistent observable with ID: ${observableHandler.index}`);
             observableHandler.subscription = observableHandler.observable.subscribe();
         });
 
-        this.secondaryObservableHandlers.forEach((observableHandler) => {
-            // console.log(`Subscribing secondary observable with ID: ${observableHandler.index}`);
-            observableHandler.subscription = observableHandler.observable.subscribe();
+        this.transientObservableHandlers.forEach((observableHandler) => {
+            // console.log(`Subscribing transient observable with ID: ${observableHandler.index}`);
+            observableHandler.subscription = observableHandler.observable
+                .pipe(takeUntil(this.destroyed$))
+                .subscribe();
         });
 
         this.isSubscribed = true;
@@ -218,20 +223,25 @@ export class ComponentStore<T> {
      * useComponentStore().
      */
     tearDownSubscriptions(): void {
-        this.primaryObservableHandlers.forEach((observableHandler) => {
-            // console.log(`Unsubscribing primary observable with ID: ${observableHandler.index}`);
+        if (!this.isSubscribed) return;
+
+        // Signal all transient to complete
+        this.destroyed$.next();
+
+        this.persistentObservableHandlers.forEach((observableHandler) => {
+            // console.log(`Unsubscribing persistent observable with ID: ${observableHandler.index}`);
             observableHandler.subscription?.unsubscribe();
             observableHandler.subscription = undefined;
         });
 
-        this.secondaryObservableHandlers.forEach((observableHandler) => {
-            // console.log(`Unsubscribing secondary observable with ID: ${observableHandler.index}`);
+        this.transientObservableHandlers.forEach((observableHandler) => {
+            // console.log(`Unsubscribing transient observable with ID: ${observableHandler.index}`);
             observableHandler.subscription?.unsubscribe();
             observableHandler.subscription = undefined;
         });
 
-        // Note: Secondary observables get recreated automatically when the effect function is called again.
-        this.secondaryObservableHandlers = [];
+        // Note: Transient observables get recreated automatically when the component is remounted.
+        this.transientObservableHandlers = [];
 
         this.isSubscribed = false;
     }
