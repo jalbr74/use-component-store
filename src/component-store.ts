@@ -9,7 +9,7 @@ function isNoArgCtor(x: unknown): x is NoArgStoreCtor {
     return (
         typeof x === "function" &&
         !!(x as any).prototype &&
-        ("createSubscriptions" in (x as any).prototype || "removeSubscriptions" in (x as any).prototype)
+        ("setUpSubscriptions" in (x as any).prototype || "tearDownSubscriptions" in (x as any).prototype)
     );
 }
 
@@ -41,21 +41,22 @@ export function useComponentStore(
     arg: NoArgStoreCtor | (() => AnyStore)
 ) {
     const [store] = useState<AnyStore>(() => isNoArgCtor(arg) ? new arg() : (arg as () => AnyStore)());
-    const [state, setState] = useState(() => store.state);
+    const [state, setState] = useState(store.state);
 
     store.reactSetState = setState;
 
     useEffect(() => {
-        store.createSubscriptions();
+        store.setUpSubscriptions();
         store.init();
 
-        return () => store.removeSubscriptions();
+        return () => store.tearDownSubscriptions();
     }, [store]);
 
     return [state, store];
 }
 
 interface ObservableHandler {
+    index: number;
     observable: Observable<unknown>;
     subscription?: Subscription;
 }
@@ -67,8 +68,11 @@ interface ObservableHandler {
  */
 export class ComponentStore<T> {
     private stateSubject: BehaviorSubject<T>;
-    private observableHandlers: ObservableHandler[] = [];
     private isSubscribed = false;
+    private observableIndex = 0;
+
+    private primaryObservableHandlers: ObservableHandler[] = [];
+    private secondaryObservableHandlers: ObservableHandler[] = [];
 
     state$: Observable<T>;
     reactSetState?: Dispatch<SetStateAction<T>>;
@@ -96,7 +100,7 @@ export class ComponentStore<T> {
      *     myValue: 'Hello World'
      * }));
      */
-    setState(stateUpdaterFn: ((prevState: T) => T)): void {
+    setState(stateUpdaterFn: (prevState: T) => T): void {
         if (this.reactSetState) {
             this.reactSetState((state: T) => {
                 const newState = stateUpdaterFn(state);
@@ -157,41 +161,52 @@ export class ComponentStore<T> {
      */
     effect<ObservableType>(generator: (source$: Observable<ObservableType>) => Observable<unknown>) {
         const origin$ = new Subject<ObservableType>();
-        this.addObservable(generator(origin$));
+        this.addObservable(generator(origin$), true);
 
         return ((observableOrValue?: ObservableType | Observable<ObservableType>): void => {
             if (isObservable(observableOrValue)) {
                 this.addObservable(observableOrValue.pipe(
                     tap((value: ObservableType) => {
+                        // console.log(`Emitting value to effect`);
                         origin$.next(value as ObservableType);
                     })
-                ));
+                ), false);
             } else {
                 origin$.next(observableOrValue as ObservableType);
             }
         });
     }
 
-    private addObservable(observable: Observable<unknown>): void {
+    private addObservable(observable: Observable<unknown>, isPrimary: boolean): void {
+        // Create an observable handler, which will hold the subscription when created
         const observableHandler: ObservableHandler = {
+            index: this.observableIndex++,
             observable
         };
 
+        // console.log(`Adding observable with ID: ${observableHandler.index}, isPrimary: ${isPrimary}`);
+
         if (this.isSubscribed) {
-            // console.log('Creating an out-of-band subscription for observable: %O', observableHandler.observable);
+            // console.log(`Doing an out-of-band subscription for observable with ID: ${observableHandler.index}`);
             observableHandler.subscription = observable.subscribe();
         }
 
-        this.observableHandlers.push(observableHandler);
+        if (isPrimary) this.primaryObservableHandlers.push(observableHandler);
+        else this.secondaryObservableHandlers.push(observableHandler);
     }
 
     /**
      * Provides a way to activate the effects defined by this component store. This is handled automatically by
      * useComponentStore().
      */
-    createSubscriptions(): void {
-        this.observableHandlers.forEach((observableHandler, index) => {
-            // console.log('Subscribing observable: %O, at index: %O', observableHandler.observable, index);
+    setUpSubscriptions(): void {
+        this.primaryObservableHandlers.forEach((observableHandler) => {
+            // console.log(`Subscribing primary observable with ID: ${observableHandler.index}`);
+            observableHandler.subscription = observableHandler.observable.subscribe();
+        });
+
+        this.secondaryObservableHandlers.forEach((observableHandler) => {
+            // console.log(`Subscribing secondary observable with ID: ${observableHandler.index}`);
             observableHandler.subscription = observableHandler.observable.subscribe();
         });
 
@@ -202,11 +217,21 @@ export class ComponentStore<T> {
      * Provides a way to deactivate the effects defined by this component store. This is handled automatically by
      * useComponentStore().
      */
-    removeSubscriptions(): void {
-        this.observableHandlers.forEach((observableHandler, index) => {
-            // console.log('Unsubscribing from observable: %O, at index: %O', observableHandler.observable, index);
+    tearDownSubscriptions(): void {
+        this.primaryObservableHandlers.forEach((observableHandler) => {
+            // console.log(`Unsubscribing primary observable with ID: ${observableHandler.index}`);
             observableHandler.subscription?.unsubscribe();
+            observableHandler.subscription = undefined;
         });
+
+        this.secondaryObservableHandlers.forEach((observableHandler) => {
+            // console.log(`Unsubscribing secondary observable with ID: ${observableHandler.index}`);
+            observableHandler.subscription?.unsubscribe();
+            observableHandler.subscription = undefined;
+        });
+
+        // Note: Secondary observables get recreated automatically when the effect function is called again.
+        this.secondaryObservableHandlers = [];
 
         this.isSubscribed = false;
     }
