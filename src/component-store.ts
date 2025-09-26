@@ -21,7 +21,7 @@ function isNoArgCtor(x: unknown): x is NoArgStoreCtor {
  * </pre>
  */
 export function useComponentStore<Ctor extends NoArgStoreCtor>(
-    StoreCtor: Ctor
+    storeConstructor: Ctor
 ): [StateOf<InstanceType<Ctor>>, InstanceType<Ctor>];
 
 /**
@@ -32,9 +32,9 @@ export function useComponentStore<Ctor extends NoArgStoreCtor>(
  *     const [state, store] = useComponentStore(() => new AppStore('Initial Message'));
  * </pre>
  */
-export function useComponentStore<S extends AnyStore>(
-    factory: () => S
-): [StateOf<S>, S];
+export function useComponentStore<ComponentStoreInstance extends AnyStore>(
+    storeFactory: () => ComponentStoreInstance
+): [StateOf<ComponentStoreInstance>, ComponentStoreInstance];
 
 /* ——— single implementation ——— */
 export function useComponentStore(
